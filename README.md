@@ -17,6 +17,8 @@ to provide several
 - `get_resource_metadata`: Retrieves metadata about a Google Ads API resource type, for example "campaign". This is useful to understand the structure of the data and what fields are available for querying.
 - `list_accessible_customers`: Returns ids of customers directly accessible
   by the user authenticating the call.
+- `get_account_hierarchy`: Returns the tree of accounts under a manager (MCC)
+  account, with name, level, status, currency and time zone.
 
 ### Configuring and Namespacing Tools
 
@@ -192,6 +194,7 @@ IDE 2.5.5; `httpUrl` is not accepted by those versions. After authentication,
 both clients should list these namespaced tools:
 
 - `customers_list_accessible_customers`
+- `customers_get_account_hierarchy`
 - `metadata_get_resource_metadata`
 - `search_search`
 

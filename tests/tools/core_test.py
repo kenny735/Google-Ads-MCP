@@ -41,6 +41,47 @@ class TestCoreTools(unittest.TestCase):
         mock_get_service.assert_called_once_with("CustomerService")
         mock_service.list_accessible_customers.assert_called_once()
 
+    @patch("ads_mcp.utils.get_googleads_service")
+    def test_get_account_hierarchy_success(self, mock_get_service):
+        """Tests that get_account_hierarchy flattens customer_client rows."""
+        client = MagicMock()
+        client.client_customer = "customers/111"
+        client.descriptive_name = "Child"
+        client.level = 1
+        client.manager = False
+        client.status.name = "ENABLED"
+        client.currency_code = "EUR"
+        client.time_zone = "Europe/Paris"
+        batch = MagicMock()
+        batch.results = [MagicMock(customer_client=client)]
+        mock_service = MagicMock()
+        mock_service.search_stream.return_value = [batch]
+        mock_get_service.return_value = mock_service
+
+        result = core.get_account_hierarchy("123-456-7890")
+
+        self.assertEqual(
+            result,
+            [
+                {
+                    "customer_id": "111",
+                    "name": "Child",
+                    "level": 1,
+                    "is_manager": False,
+                    "status": "ENABLED",
+                    "currency_code": "EUR",
+                    "time_zone": "Europe/Paris",
+                }
+            ],
+        )
+        mock_get_service.assert_called_once_with(
+            "GoogleAdsService", login_customer_id="1234567890"
+        )
+        self.assertEqual(
+            mock_service.search_stream.call_args.kwargs["customer_id"],
+            "1234567890",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

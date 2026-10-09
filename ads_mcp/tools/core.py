@@ -14,12 +14,14 @@
 
 """Tools for exposing simple, core API methods to the MCP server."""
 
-from typing import List
+from typing import Any, Dict, List
 from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
 import ads_mcp.utils as utils
 
+from google.ads.googleads.errors import GoogleAdsException
 from google.ads.googleads.v25.services.types.customer_service import (
     ListAccessibleCustomersResponse,
 )
@@ -46,3 +48,76 @@ def list_accessible_customers() -> List[str]:
         cust_rn.removeprefix("customers/")
         for cust_rn in accessible_customers.resource_names
     ]
+
+
+_HIERARCHY_FIELDS = [
+    "customer_client.client_customer",
+    "customer_client.descriptive_name",
+    "customer_client.level",
+    "customer_client.manager",
+    "customer_client.status",
+    "customer_client.currency_code",
+    "customer_client.time_zone",
+]
+
+
+@customers_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+def get_account_hierarchy(
+    manager_customer_id: str | int,
+    login_customer_id: str | int | None = None,
+) -> List[Dict[str, Any]]:
+    """Returns the account tree under a manager (MCC) account.
+
+    Each row describes one account under the manager, including the manager
+    itself at level 0, with its name, level, status, currency and time zone.
+    Use `level` to rebuild the tree: level 1 accounts are direct children,
+    level 2 accounts sit under a sub-manager, and so on.
+
+    Args:
+        manager_customer_id: The id of the manager account to start from.
+        login_customer_id: Optional manager customer ID to use as the
+            login-customer-id header. Defaults to the manager_customer_id.
+
+    Returns:
+        List[Dict[str, Any]]: One dict per account, ordered by level, with the
+        keys customer_id, name, level, is_manager, status, currency_code and
+        time_zone.
+    """
+    manager_customer_id = utils.clean_customer_id(manager_customer_id)
+    ga_service = utils.get_googleads_service(
+        "GoogleAdsService",
+        login_customer_id=login_customer_id or manager_customer_id,
+    )
+    query = (
+        f"SELECT {', '.join(_HIERARCHY_FIELDS)} FROM customer_client "
+        "ORDER BY customer_client.level"
+    )
+    try:
+        rows = []
+        for batch in ga_service.search_stream(
+            customer_id=manager_customer_id, query=query
+        ):
+            for row in batch.results:
+                client = row.customer_client
+                rows.append(
+                    {
+                        "customer_id": client.client_customer.removeprefix(
+                            "customers/"
+                        ),
+                        "name": client.descriptive_name,
+                        "level": client.level,
+                        "is_manager": client.manager,
+                        "status": client.status.name,
+                        "currency_code": client.currency_code,
+                        "time_zone": client.time_zone,
+                    }
+                )
+        return rows
+    except GoogleAdsException as ex:
+        error_msgs = [
+            f"Google Ads API Error: {error.message}"
+            for error in ex.failure.errors
+        ]
+        raise ToolError(
+            f"Request ID: {ex.request_id}\n" + "\n".join(error_msgs)
+        )
